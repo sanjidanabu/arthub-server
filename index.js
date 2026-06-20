@@ -32,6 +32,19 @@ async function run() {
     await client.connect();
     const db = client.db("arthub");
 
+    const artworksCollection = db.collection("artworks"); 
+
+   
+    app.post("/api/artworks", async (req, res) => {
+      const newArtwork = req.body;
+      try {
+        const result = await artworksCollection.insertOne(newArtwork);
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to add artwork", error });
+      }
+    });
+
  
 
     await client.db("admin").command({ ping: 1 });
