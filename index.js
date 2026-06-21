@@ -43,6 +43,49 @@ async function run() {
       }
     });
 
+app.post("/api/comments", async (req, res) => {
+  const { artworkId, userId, userName, comment } = req.body;
+  try {
+    const result = await db.collection("comments").insertOne({
+      artworkId,
+      userId,
+      userName,
+      comment,
+      createdAt: new Date(),
+    });
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to post comment", error });
+  }
+});
+
+
+app.get("/api/comments/:artworkId", async (req, res) => {
+  const { artworkId } = req.params;
+  try {
+    const comments = await db.collection("comments")
+      .find({ artworkId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.send(comments);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch comments", error });
+  }
+});
+
+
+app.get("/api/check-purchase/:userId/:artworkId", async (req, res) => {
+  const { userId, artworkId } = req.params;
+  try {
+    const purchase = await db.collection("purchases").findOne({
+      userId,
+      artworkId,
+    });
+    res.send({ hasPurchased: !!purchase });
+  } catch (error) {
+    res.status(500).send({ message: "Error checking purchase", error });
+  }
+});
    
     app.get("/api/artworks", async (req, res) => {
       try {
