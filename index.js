@@ -96,6 +96,9 @@ async function run() {
           userId,
           artworkId,
           sessionId,
+           artworkName, 
+         artistName,  
+             price, 
           purchasedAt: new Date(),
         });
         
@@ -104,6 +107,36 @@ async function run() {
         res.status(500).send({ message: "Failed to save purchase", error });
       }
     });
+
+    
+app.post("/api/update-user-plan", async (req, res) => {
+  const { userId, plan, sessionId } = req.body;
+
+  try {
+    
+    let queryId;
+    if (ObjectId.isValid(userId)) {
+      queryId = new ObjectId(userId);
+    } else {
+      queryId = userId; 
+    }
+
+    
+    const result = await db.collection("user").updateOne(
+      { _id: queryId },
+      { $set: { plan: plan, stripeSessionId: sessionId, updatedAt: new Date() } }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: "Plan updated successfully" });
+    } else {
+      res.send({ success: false, message: "User not found or plan is already the same" });
+    }
+  } catch (error) {
+    console.error("Plan update error:", error);
+    res.status(500).send({ message: "Failed to update plan", error });
+  }
+});
    
     app.get("/api/artworks", async (req, res) => {
       try {
