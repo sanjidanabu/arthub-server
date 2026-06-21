@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 app.use(
   cors({
     credentials: true,
-    origin: [process.env.CLIENT_URL],
+    origin: [process.env.CLIENT_URL || "http://localhost:3000"],
   }),
 );
 app.use(express.json());
@@ -29,10 +29,8 @@ async function run() {
   try {
     await client.connect();
     const db = client.db("arthub");
-
     const artworksCollection = db.collection("artworks"); 
 
-    
     app.post("/api/artworks", async (req, res) => {
       const newArtwork = req.body;
       try {
@@ -43,108 +41,98 @@ async function run() {
       }
     });
 
-app.post("/api/comments", async (req, res) => {
-  const { artworkId, userId, userName, comment } = req.body;
-  try {
-    const result = await db.collection("comments").insertOne({
-      artworkId,
-      userId,
-      userName,
-      comment,
-      createdAt: new Date(),
+    app.post("/api/comments", async (req, res) => {
+      const { artworkId, userId, userName, comment } = req.body;
+      try {
+        const result = await db.collection("comments").insertOne({
+          artworkId,
+          userId,
+          userName,
+          comment,
+          createdAt: new Date(),
+        });
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to post comment", error });
+      }
     });
-    res.send(result);
-  } catch (error) {
-    res.status(500).send({ message: "Failed to post comment", error });
-  }
-});
 
-
-app.get("/api/comments/:artworkId", async (req, res) => {
-  const { artworkId } = req.params;
-  try {
-    const comments = await db.collection("comments")
-      .find({ artworkId })
-      .sort({ createdAt: -1 })
-      .toArray();
-    res.send(comments);
-  } catch (error) {
-    res.status(500).send({ message: "Failed to fetch comments", error });
-  }
-});
-
-
-app.get("/api/check-purchase/:userId/:artworkId", async (req, res) => {
-  const { userId, artworkId } = req.params;
-  try {
-    const purchase = await db.collection("purchases").findOne({
-      userId,
-      artworkId,
+    app.get("/api/comments/:artworkId", async (req, res) => {
+      const { artworkId } = req.params;
+      try {
+        const comments = await db.collection("comments")
+          .find({ artworkId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.send(comments);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch comments", error });
+      }
     });
-    res.send({ hasPurchased: !!purchase });
-  } catch (error) {
-    res.status(500).send({ message: "Error checking purchase", error });
-  }
-});
+
+    app.get("/api/check-purchase/:userId/:artworkId", async (req, res) => {
+      const { userId, artworkId } = req.params;
+      try {
+        const purchase = await db.collection("purchases").findOne({
+          userId,
+          artworkId,
+        });
+        res.send({ hasPurchased: !!purchase });
+      } catch (error) {
+        res.status(500).send({ message: "Error checking purchase", error });
+      }
+    });
+
+    
+    app.post("/api/purchases", async (req, res) => {
+      const { userId, artworkId, sessionId } = req.body;
+      try {
+        const existingPurchase = await db.collection("purchases").findOne({ userId, artworkId });
+        if (existingPurchase) {
+          return res.send({ message: "Already purchased", success: true });
+        }
+
+        const result = await db.collection("purchases").insertOne({
+          userId,
+          artworkId,
+          sessionId,
+          purchasedAt: new Date(),
+        });
+        
+        res.send({ success: true, result });
+      } catch (error) {
+        res.status(500).send({ message: "Failed to save purchase", error });
+      }
+    });
    
     app.get("/api/artworks", async (req, res) => {
       try {
-        const { 
-          search, 
-          category, 
-          minPrice, 
-          maxPrice, 
-          sort, 
-          page = 1, 
-          limit = 8 
-        } = req.query;
-
-        
+        const { search, category, minPrice, maxPrice, sort, page = 1, limit = 8 } = req.query;
         let query = {};
 
-       
         if (search) {
           query.$or = [
             { title: { $regex: search, $options: "i" } },
             { artistName: { $regex: search, $options: "i" } },
           ];
         }
-
-        
-        if (category) {
-          query.category = category;
-        }
-
-       
+        if (category) query.category = category;
         if (minPrice || maxPrice) {
           query.price = {};
           if (minPrice) query.price.$gte = parseFloat(minPrice);
           if (maxPrice) query.price.$lte = parseFloat(maxPrice);
         }
 
-        
         let sortOptions = {};
-        if (sort === "price_asc") {
-          sortOptions.price = 1; 
-        } else if (sort === "price_desc") {
-          sortOptions.price = -1; 
-        } else {
-          sortOptions._id = -1; 
-        }
+        if (sort === "price_asc") sortOptions.price = 1; 
+        else if (sort === "price_desc") sortOptions.price = -1; 
+        else sortOptions._id = -1; 
 
-        
         const pageNumber = parseInt(page);
         const limitNumber = parseInt(limit);
         const skip = (pageNumber - 1) * limitNumber;
 
-        
-        const artworks = await artworksCollection
-          .find(query)
-          .sort(sortOptions)
-          .skip(skip)
-          .limit(limitNumber)
-          .toArray();
-
+        const artworks = await artworksCollection.find(query).sort(sortOptions).skip(skip).limit(limitNumber).toArray();
         const totalArtworks = await artworksCollection.countDocuments(query);
 
         res.send({
@@ -153,28 +141,20 @@ app.get("/api/check-purchase/:userId/:artworkId", async (req, res) => {
           totalPages: Math.ceil(totalArtworks / limitNumber),
           currentPage: pageNumber,
         });
-
       } catch (error) {
         res.status(500).send({ message: "Failed to fetch artworks", error });
       }
     });
 
-    
     app.get("/api/artworks/:id", async (req, res) => {
       try {
         const id = req.params.id;
-       
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ message: "Invalid Artwork ID" });
-        }
+        if (!ObjectId.isValid(id)) return res.status(400).send({ message: "Invalid Artwork ID" });
         
         const query = { _id: new ObjectId(id) };
         const artwork = await artworksCollection.findOne(query);
         
-        if (!artwork) {
-          return res.status(404).send({ message: "Artwork not found" });
-        }
-        
+        if (!artwork) return res.status(404).send({ message: "Artwork not found" });
         res.send(artwork);
       } catch (error) {
         res.status(500).send({ message: "Failed to fetch artwork details", error });
@@ -183,10 +163,7 @@ app.get("/api/check-purchase/:userId/:artworkId", async (req, res) => {
 
     await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
-  }
+  } finally {}
 }
 run().catch(console.dir);
 
