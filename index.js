@@ -7,12 +7,12 @@ dontenv.config();
 const uri = process.env.MONGODB_URI;
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT ;
 
 app.use(
   cors({
     credentials: true,
-    origin: [process.env.CLIENT_URL || "http://localhost:3000"],
+    origin: process.env.CLIENT_URL 
   }),
 );
 app.use(express.json());
@@ -84,29 +84,41 @@ async function run() {
     });
 
     
-    app.post("/api/purchases", async (req, res) => {
-      const { userId, artworkId, sessionId } = req.body;
-      try {
-        const existingPurchase = await db.collection("purchases").findOne({ userId, artworkId });
-        if (existingPurchase) {
-          return res.send({ message: "Already purchased", success: true });
-        }
+   app.post("/api/purchases", async (req, res) => {
+  const { userId, artworkId, sessionId } = req.body; 
+  
+  try {
+    
+    const existingPurchase = await db.collection("purchases").findOne({ userId, artworkId });
+    if (existingPurchase) {
+      return res.send({ message: "Already purchased", success: true });
+    }
 
-        const result = await db.collection("purchases").insertOne({
-          userId,
-          artworkId,
-          sessionId,
-           artworkName, 
-         artistName,  
-             price, 
-          purchasedAt: new Date(),
-        });
-        
-        res.send({ success: true, result });
-      } catch (error) {
-        res.status(500).send({ message: "Failed to save purchase", error });
-      }
+    
+    const artwork = await artworksCollection.findOne({ _id: new ObjectId(artworkId) });
+
+    if (!artwork) {
+      return res.status(404).send({ message: "Artwork not found in database" });
+    }
+
+    
+    const result = await db.collection("purchases").insertOne({
+      userId,
+      artworkId,
+      sessionId,
+      artworkName: artwork.title,    
+      artistName: artwork.artistName, 
+      price: artwork.price,           
+      imageUrl: artwork.imageUrl,     
+      purchasedAt: new Date(),
     });
+    
+    res.send({ success: true, result });
+  } catch (error) {
+    console.error("Purchase error:", error);
+    res.status(500).send({ message: "Failed to save purchase", error });
+  }
+});
 
     
 app.post("/api/update-user-plan", async (req, res) => {
@@ -135,6 +147,34 @@ app.post("/api/update-user-plan", async (req, res) => {
   } catch (error) {
     console.error("Plan update error:", error);
     res.status(500).send({ message: "Failed to update plan", error });
+  }
+});
+
+
+app.put("/api/users/:id", async (req, res) => {
+  const { id } = req.params;
+  const { name, image } = req.body;
+
+  try {
+    let queryId;
+    if (ObjectId.isValid(id)) {
+      queryId = new ObjectId(id);
+    } else {
+      return res.status(400).send({ message: "Invalid User ID" });
+    }
+
+    const result = await db.collection("user").updateOne(
+      { _id: queryId },
+      { $set: { name, image, updatedAt: new Date() } }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: "Profile updated successfully" });
+    } else {
+      res.send({ success: false, message: "No changes made or user not found" });
+    }
+  } catch (error) {
+    res.status(500).send({ message: "Failed to update profile", error });
   }
 });
    
@@ -178,6 +218,16 @@ app.post("/api/update-user-plan", async (req, res) => {
         res.status(500).send({ message: "Failed to fetch artworks", error });
       }
     });
+
+    app.get("/api/my-purchases/:userId", async (req, res) => {
+  try {
+    const userId = req.params.userId;
+    const purchases = await db.collection("purchases").find({ userId }).toArray();
+    res.send(purchases);
+  } catch (error) {
+    res.status(500).send({ message: "Error fetching purchases", error });
+  }
+});
 
     app.get("/api/artworks/:id", async (req, res) => {
       try {
