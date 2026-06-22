@@ -230,6 +230,51 @@ async function run() {
       }
     });
    
+    app.get("/api/artist-sales/:email", async (req, res) => {
+      try {
+        const email = req.params.email;
+        
+       
+        const myArtworks = await artworksCollection.find({ artistEmail: email }).toArray();
+        const myArtworkIds = myArtworks.map(art => art._id.toString());
+
+        
+        if (myArtworkIds.length === 0) {
+          return res.send([]);
+        }
+
+        
+        const sales = await db.collection("purchases")
+          .find({ artworkId: { $in: myArtworkIds } })
+          .sort({ purchasedAt: -1 })
+          .toArray();
+
+        
+        const userIds = [...new Set(sales.map(s => s.userId))]; 
+        const buyerObjectIds = userIds.map(id => ObjectId.isValid(id) ? new ObjectId(id) : id);
+        
+        const buyers = await db.collection("user")
+          .find({ _id: { $in: buyerObjectIds } })
+          .project({ name: 1 }) 
+          .toArray();
+
+        
+        const enrichedSales = sales.map(sale => {
+          
+          const buyer = buyers.find(b => b._id.toString() === sale.userId);
+          return {
+            ...sale,
+            buyerName: buyer ? buyer.name : "Unknown Buyer"
+          };
+        });
+
+        res.send(enrichedSales);
+      } catch (error) {
+        console.error("Sales fetch error:", error);
+        res.status(500).send({ message: "Failed to fetch sales history", error });
+      }
+    });
+   
     app.get("/api/artworks", async (req, res) => {
       try {
         const { search, category, minPrice, maxPrice, sort, page = 1, limit = 8 } = req.query;
