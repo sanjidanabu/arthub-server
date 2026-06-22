@@ -103,6 +103,41 @@ async function run() {
         res.status(500).send({ message: "Failed to delete artwork", error });
       }
     });
+
+   
+  app.get("/api/users", async (req, res) => {
+  try {
+    const users = await db.collection("user").find({}).toArray();
+    res.send(users);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch users", error });
+  }
+});
+
+
+app.put("/api/users/change-role/:id", async (req, res) => {
+  const { id } = req.params;
+  const { role } = req.body; 
+
+  try {
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid User ID" });
+    }
+
+    const result = await db.collection("user").updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { role: role, updatedAt: new Date() } }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: "User role updated successfully" });
+    } else {
+      res.send({ success: false, message: "No changes made or user not found" });
+    }
+  } catch (error) {
+    res.status(500).send({ message: "Failed to update user role", error });
+  }
+});
     
 
     app.post("/api/comments", async (req, res) => {
