@@ -1,13 +1,13 @@
 const express = require("express");
-const dontenv = require("dotenv");
+const dotenv = require("dotenv"); 
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-dontenv.config();
+dotenv.config();
 
 const uri = process.env.MONGODB_URI;
 
 const app = express();
-const PORT = process.env.PORT ;
+const PORT = process.env.PORT || 5000;
 
 app.use(
   cors({
@@ -31,6 +31,7 @@ async function run() {
     const db = client.db("arthub");
     const artworksCollection = db.collection("artworks"); 
 
+    
     app.post("/api/artworks", async (req, res) => {
       const newArtwork = req.body;
       try {
@@ -40,6 +41,69 @@ async function run() {
         res.status(500).send({ message: "Failed to add artwork", error });
       }
     });
+
+    
+    app.get("/api/my-artworks/:email", async (req, res) => {
+      const email = req.params.email;
+      try {
+        const query = { artistEmail: email };
+        const artworks = await artworksCollection.find(query).sort({ createdAt: -1 }).toArray();
+        res.send(artworks);
+      } catch (error) {
+        res.status(500).send({ message: "Failed to fetch your artworks", error });
+      }
+    });
+
+    
+    app.put("/api/artworks/update/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+      try {
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid Artwork ID" });
+        }
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            title: updatedData.title,
+            artistName: updatedData.artistName,
+            description: updatedData.description,
+            price: parseFloat(updatedData.price),
+            category: updatedData.category,
+            ...(updatedData.imageUrl && { imageUrl: updatedData.imageUrl }), 
+            updatedAt: new Date()
+          },
+        };
+        const result = await artworksCollection.updateOne(filter, updateDoc);
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Artwork updated successfully" });
+        } else {
+          res.send({ success: false, message: "No changes made or artwork not found" });
+        }
+      } catch (error) {
+        res.status(500).send({ message: "Failed to update artwork", error });
+      }
+    });
+
+   
+    app.delete("/api/artworks/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: "Invalid Artwork ID" });
+        }
+        const query = { _id: new ObjectId(id) };
+        const result = await artworksCollection.deleteOne(query);
+        if (result.deletedCount > 1 || result.deletedCount === 1) {
+          res.send({ success: true, message: "Artwork deleted successfully" });
+        } else {
+          res.status(404).send({ success: false, message: "Artwork not found" });
+        }
+      } catch (error) {
+        res.status(500).send({ message: "Failed to delete artwork", error });
+      }
+    });
+    
 
     app.post("/api/comments", async (req, res) => {
       const { artworkId, userId, userName, comment } = req.body;
@@ -83,100 +147,88 @@ async function run() {
       }
     });
 
-    
-   app.post("/api/purchases", async (req, res) => {
-  const { userId, artworkId, sessionId } = req.body; 
-  
-  try {
-    
-    const existingPurchase = await db.collection("purchases").findOne({ userId, artworkId });
-    if (existingPurchase) {
-      return res.send({ message: "Already purchased", success: true });
-    }
+    app.post("/api/purchases", async (req, res) => {
+      const { userId, artworkId, sessionId } = req.body; 
+      try {
+        const existingPurchase = await db.collection("purchases").findOne({ userId, artworkId });
+        if (existingPurchase) {
+          return res.send({ message: "Already purchased", success: true });
+        }
 
-    
-    const artwork = await artworksCollection.findOne({ _id: new ObjectId(artworkId) });
+        const artwork = await artworksCollection.findOne({ _id: new ObjectId(artworkId) });
+        if (!artwork) {
+          return res.status(404).send({ message: "Artwork not found in database" });
+        }
 
-    if (!artwork) {
-      return res.status(404).send({ message: "Artwork not found in database" });
-    }
-
-    
-    const result = await db.collection("purchases").insertOne({
-      userId,
-      artworkId,
-      sessionId,
-      artworkName: artwork.title,    
-      artistName: artwork.artistName, 
-      price: artwork.price,           
-      imageUrl: artwork.imageUrl,     
-      purchasedAt: new Date(),
+        const result = await db.collection("purchases").insertOne({
+          userId,
+          artworkId,
+          sessionId,
+          artworkName: artwork.title,    
+          artistName: artwork.artistName, 
+          price: artwork.price,           
+          imageUrl: artwork.imageUrl,     
+          purchasedAt: new Date(),
+        });
+        
+        res.send({ success: true, result });
+      } catch (error) {
+        console.error("Purchase error:", error);
+        res.status(500).send({ message: "Failed to save purchase", error });
+      }
     });
-    
-    res.send({ success: true, result });
-  } catch (error) {
-    console.error("Purchase error:", error);
-    res.status(500).send({ message: "Failed to save purchase", error });
-  }
-});
 
-    
-app.post("/api/update-user-plan", async (req, res) => {
-  const { userId, plan, sessionId } = req.body;
+    app.post("/api/update-user-plan", async (req, res) => {
+      const { userId, plan, sessionId } = req.body;
+      try {
+        let queryId;
+        if (ObjectId.isValid(userId)) {
+          queryId = new ObjectId(userId);
+        } else {
+          queryId = userId; 
+        }
 
-  try {
-    
-    let queryId;
-    if (ObjectId.isValid(userId)) {
-      queryId = new ObjectId(userId);
-    } else {
-      queryId = userId; 
-    }
+        const result = await db.collection("user").updateOne(
+          { _id: queryId },
+          { $set: { plan: plan, stripeSessionId: sessionId, updatedAt: new Date() } }
+        );
 
-    
-    const result = await db.collection("user").updateOne(
-      { _id: queryId },
-      { $set: { plan: plan, stripeSessionId: sessionId, updatedAt: new Date() } }
-    );
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Plan updated successfully" });
+        } else {
+          res.send({ success: false, message: "User not found or plan is already the same" });
+        }
+      } catch (error) {
+        console.error("Plan update error:", error);
+        res.status(500).send({ message: "Failed to update plan", error });
+      }
+    });
 
-    if (result.modifiedCount > 0) {
-      res.send({ success: true, message: "Plan updated successfully" });
-    } else {
-      res.send({ success: false, message: "User not found or plan is already the same" });
-    }
-  } catch (error) {
-    console.error("Plan update error:", error);
-    res.status(500).send({ message: "Failed to update plan", error });
-  }
-});
+    app.put("/api/users/:id", async (req, res) => {
+      const { id } = req.params;
+      const { name, image } = req.body;
+      try {
+        let queryId;
+        if (ObjectId.isValid(id)) {
+          queryId = new ObjectId(id);
+        } else {
+          return res.status(400).send({ message: "Invalid User ID" });
+        }
 
+        const result = await db.collection("user").updateOne(
+          { _id: queryId },
+          { $set: { name, image, updatedAt: new Date() } }
+        );
 
-app.put("/api/users/:id", async (req, res) => {
-  const { id } = req.params;
-  const { name, image } = req.body;
-
-  try {
-    let queryId;
-    if (ObjectId.isValid(id)) {
-      queryId = new ObjectId(id);
-    } else {
-      return res.status(400).send({ message: "Invalid User ID" });
-    }
-
-    const result = await db.collection("user").updateOne(
-      { _id: queryId },
-      { $set: { name, image, updatedAt: new Date() } }
-    );
-
-    if (result.modifiedCount > 0) {
-      res.send({ success: true, message: "Profile updated successfully" });
-    } else {
-      res.send({ success: false, message: "No changes made or user not found" });
-    }
-  } catch (error) {
-    res.status(500).send({ message: "Failed to update profile", error });
-  }
-});
+        if (result.modifiedCount > 0) {
+          res.send({ success: true, message: "Profile updated successfully" });
+        } else {
+          res.send({ success: false, message: "No changes made or user not found" });
+        }
+      } catch (error) {
+        res.status(500).send({ message: "Failed to update profile", error });
+      }
+    });
    
     app.get("/api/artworks", async (req, res) => {
       try {
@@ -220,14 +272,14 @@ app.put("/api/users/:id", async (req, res) => {
     });
 
     app.get("/api/my-purchases/:userId", async (req, res) => {
-  try {
-    const userId = req.params.userId;
-    const purchases = await db.collection("purchases").find({ userId }).toArray();
-    res.send(purchases);
-  } catch (error) {
-    res.status(500).send({ message: "Error fetching purchases", error });
-  }
-});
+      try {
+        const userId = req.params.userId;
+        const purchases = await db.collection("purchases").find({ userId }).toArray();
+        res.send(purchases);
+      } catch (error) {
+        res.status(500).send({ message: "Error fetching purchases", error });
+      }
+    });
 
     app.get("/api/artworks/:id", async (req, res) => {
       try {
