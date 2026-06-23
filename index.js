@@ -86,6 +86,40 @@ async function run() {
     });
 
    
+app.get("/api/admin/analytics", async (req, res) => {
+  try {
+   
+    const totalUsers = await db.collection("user").countDocuments({});
+    const totalArtists = await db.collection("user").countDocuments({ role: "artist" });
+
+    const purchases = await db.collection("purchases").find({}).toArray();
+    const totalArtworksSold = purchases.length;
+    const totalRevenue = purchases.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+
+    
+    const artworks = await artworksCollection.find({}).toArray();
+    const counts = {};
+    artworks.forEach((art) => {
+      const cat = art.category || "Uncategorized";
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+
+    const chartData = Object.keys(counts).map((key) => ({
+      name: key,
+      value: counts[key],
+    }));
+
+    
+    res.send({
+      stats: { totalUsers, totalArtists, totalArtworksSold, totalRevenue },
+      chartData,
+    });
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch analytics", error });
+  }
+});
+
+   
     app.delete("/api/artworks/:id", async (req, res) => {
       const id = req.params.id;
       try {
@@ -264,6 +298,45 @@ app.put("/api/users/change-role/:id", async (req, res) => {
         res.status(500).send({ message: "Failed to update profile", error });
       }
     });
+
+   
+app.get("/api/admin/transactions", async (req, res) => {
+  try {
+    
+    const purchases = await db.collection("purchases").find({}).sort({ purchasedAt: -1 }).toArray();
+    
+    const allTransactions = [];
+
+    
+    for (let purchase of purchases) {
+      let userEmail = "Unknown User";
+      
+      if (purchase.userId) {
+        
+        const queryId = ObjectId.isValid(purchase.userId) ? new ObjectId(purchase.userId) : purchase.userId;
+        const user = await db.collection("user").findOne({ _id: queryId });
+        
+        if (user && user.email) {
+          userEmail = user.email;
+        }
+      }
+
+      
+      allTransactions.push({
+        _id: purchase._id,
+        transactionId: purchase.sessionId || "N/A", 
+        type: "Purchase", 
+        email: userEmail,
+        amount: purchase.price,
+        date: purchase.purchasedAt
+      });
+    }
+
+    res.send(allTransactions);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch transactions", error });
+  }
+});
    
     app.get("/api/artist-sales/:email", async (req, res) => {
       try {
@@ -310,6 +383,15 @@ app.put("/api/users/change-role/:id", async (req, res) => {
       }
     });
    
+app.get("/api/admin/artworks", async (req, res) => {
+  try {
+   
+    const artworks = await artworksCollection.find({}).sort({ createdAt: -1 }).toArray();
+    res.send(artworks);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to fetch all artworks for admin", error });
+  }
+});
     app.get("/api/artworks", async (req, res) => {
       try {
         const { search, category, minPrice, maxPrice, sort, page = 1, limit = 8 } = req.query;
